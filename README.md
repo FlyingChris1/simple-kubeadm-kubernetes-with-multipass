@@ -1,132 +1,391 @@
-# Kubernetes Cluster Made Easy by using Multipass! ![](https://assets.ubuntu.com/v1/0698ab2d-muiltipass-promo-header.png)
+# Simple Kubernetes Cluster with Multipass
 
-You can use [Multipass](https://multipass.run/) to create two Ubuntu VMs and then set up a Kubernetes cluster on these two VMs. It only takes less than 6 minutes.
+A lightweight Kubernetes lab environment built with **Multipass**, **kubeadm**, and **containerd**.
 
+This project provides a simple and reproducible way to deploy a Kubernetes cluster using Ubuntu virtual machines managed by Multipass. It is ideal for Kubernetes learning, CKA/CKS exam preparation, testing workloads, and experimenting with cluster administration in a local environment.
 
-Terminal [iTerm2](https://iterm2.com/) pane layout, make sure they all are on the same directory.
+The setup is optimized for both **ARM64** (Apple Silicon M1/M2/M3 and ARM-based Linux hosts) and **x86_64** systems.
 
-```
-+-----------------------+------------------------------------+
-| o o o                                                      |
-+-----------------------+------------------------------------+
-| macOS                 | cks-master                         |
-|=======================|====================================|
-| $ pwd                 | $ pwd                              |
-| /Users/yujunliang     | /Users/yujunliang                  |
-| $ # Run Step 1 here.  | $ #Run Step 2 here.                |
-|                       | $ #Run Step 3 on cks-worker pane.  | 
-|                       |                                    |
-|                       +------------------------------------+
-|                       | cks-worker                         |
-|                       |====================================|
-|                       | $ pwd                              |
-|                       | /Users/yujunliang                  |
-|                       | $ #Run Step 3 here.                |
-+-----------------------+------------------------------------+
-```
+---
 
-## Screenshot
+# Table of Contents
 
-If you substract the time, it only takes 5 minutes and 26 seconds.
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+  - [Host Requirements](#host-requirements)
+  - [Verify Multipass Installation](#verify-multipass-installation)
+- [Quick Start](#quick-start)
+  - [1. Create the Virtual Machines](#1-create-the-virtual-machines)
+  - [2. Copy the Installation Scripts](#2-copy-the-installation-scripts)
+  - [3. Install the Control Plane](#3-install-the-control-plane)
+  - [4. Join the Worker Node](#4-join-the-worker-node)
+  - [5. Verify the Cluster](#5-verify-the-cluster)
+- [Usage](#usage)
+  - [Show Cluster Nodes](#show-cluster-nodes)
+  - [Show Cluster Pods](#show-cluster-pods)
+  - [Deploy a Test Application](#deploy-a-test-application)
+  - [Scale a Deployment](#scale-a-deployment)
+  - [Delete a Deployment](#delete-a-deployment)
+- [Project Structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
+- [Cleanup](#cleanup)
+- [License](#license)
 
+---
 
-![Screenshot](./images/screenshot.png)
+# Architecture
 
+The cluster consists of one Kubernetes control plane node and one worker node running inside Ubuntu virtual machines managed by Multipass.
 
-## Installation steps
-
-These are the links to install and create kubernetes cluster,
-
-0. [Download multipass](https://multipass.run/) manually.
-1. [Install Container runtimes](https://kubernetes.io/docs/setup/production-environment/container-runtimes/)
-2. [Install kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)
-3. [Create a cluster with kubeadm](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
-
-### Step 1. Create two Ubuntu VMs on macOS pane,
-
-```
-git clone https://github.com/yujunliang/multipass-kubernetes.git
-cd multipass-kubernetes/multipass
-./launch-2vm.sh
-```
-
-### Step 2. On cks-master pane,
-
-#### 2.1 SSH to Ubuntu VM cks-master 
-
-```
-cd multipass-kubernetes/multipass
-./ssh-to-cks-master.sh
-```
-
-#### 2.2 Install master packages
-
-when in cks-master VM, execute the following commands
-
-```
-sudo -i
-git clone https://github.com/yujunliang/multipass-kubernetes.git
-cd multipass-kubernetes/cks-master
-./install-all.sh
+```text
++--------------------------------------------------+
+|                   Host System                    |
+|               macOS / Linux Host                 |
+|                    Multipass                     |
++--------------------------+-----------------------+
+                           |
+        +------------------+------------------+
+        |                                     |
++-------+--------+                   +--------+-------+
+|   cks-master   |                   |   cks-worker   |
+| Control Plane  |                   |     Worker     |
++----------------+                   +----------------+
+| kube-apiserver |                   | kubelet        |
+| kube-scheduler |                   | kube-proxy     |
+| controller-mgr |                   | containerd     |
+| etcd           |                   |                |
+| kubelet        |                   |                |
+| containerd     |                   |                |
++----------------+                   +----------------+
 ```
 
-#### 2.3 Copy join command
+## Components
 
-copy the output like this, and prepare to run it in Step 3.3
+| Component | Purpose |
+|-----------|---------|
+| Multipass | Virtual machine management |
+| Ubuntu 26.04 LTS | Operating system |
+| containerd | Container runtime |
+| kubeadm | Kubernetes cluster bootstrap |
+| kubelet | Node agent |
+| kubectl | Kubernetes command-line tool |
+| Flannel | Container network interface (CNI) |
 
-```
-kubeadm join 192.168.64.3:6443 --token al0kvi.x60mi1xj4zesqnq3     --discovery-token-ca-cert-hash sha256:f4ff0c7684bbac599a8208b94bb28e451023662ab51bc1ce16f60a855a85e2a5
-```
+---
 
-### Step 3. On cks-worker pane,
+# Prerequisites
 
-#### 3.1 SSH to Ubuntu VM cks-worker
-```
-cd multipass-kubernetes/multipass
-./ssh-to-cks-worker.sh
-```
+## Host Requirements
 
-#### 3.2 Install worker packages
-when in cks-worker,execute the following commands
+### macOS
 
-```
-sudo -i
-git clone https://github.com/yujunliang/multipass-kubernetes.git
-cd multipass-kubernetes/cks-worker
-./install-all.sh
-```
+- Apple Silicon (M1/M2/M3) or Intel
+- Multipass installed
 
-#### 3.3 Join cks-master as cks-worker
+### Linux
 
-then run what you copied from Step 2, something like this,
+- Ubuntu 22.04 or newer
+- Multipass installed
 
-```
-kubeadm join 192.168.64.3:6443 --token al0kvi.x60mi1xj4zesqnq3     --discovery-token-ca-cert-hash sha256:f4ff0c7684bbac599a8208b94bb28e451023662ab51bc1ce16f60a855a85e2a5
-```
+### Recommended Resources
 
-### Step 4. On second window, cks-master
+| Resource | Master | Worker |
+|-----------|---------|---------|
+| CPU | 2 vCPUs | 2 vCPUs |
+| Memory | 4 GB | 4 GB |
+| Disk | 20 GB | 20 GB |
 
-```
-# kubectl get nodes
-NAME         STATUS   ROLES    AGE   VERSION
-cks-master   Ready    master   34h   v1.19.0
-cks-worker   Ready    <none>   34h   v1.19.0
+---
 
-# kubectl run nginx --image=nginx
-pod/nginx created
+## Verify Multipass Installation
 
-# kubectl get pod
-NAME    READY   STATUS    RESTARTS   AGE
-nginx   1/1     Running   0          19s
+```bash
+multipass version
 ```
 
-### Step 5. Delete two Ubuntu VMs on macOS pane,
+Expected output:
 
-After you complete practice, you can delete the VMs. Assume you are still on the same directory as Step 1.
-
+```text
+multipass   x.x.x
+multipassd  x.x.x
 ```
-./destroy.sh
+
+---
+
+# Quick Start
+
+## 1. Create the Virtual Machines
+
+Create the control plane node:
+
+```bash
+multipass launch 26.04 \
+  --name cks-master \
+  --cpus 2 \
+  --memory 4G \
+  --disk 20G
 ```
 
-Follow me on [LinkedIn](https://www.linkedin.com/in/yujunliang/)
-# simple-multipass-kubernetes-with-multipass
+Create the worker node:
+
+```bash
+multipass launch 26.04 \
+  --name cks-worker \
+  --cpus 2 \
+  --memory 4G \
+  --disk 20G
+```
+
+---
+
+## 2. Copy the Installation Scripts
+
+Copy the master installation script:
+
+```bash
+multipass transfer cks-master/install-all.sh \
+  cks-master:/home/ubuntu/install-all.sh
+```
+
+Copy the worker installation script:
+
+```bash
+multipass transfer cks-worker/install-all.sh \
+  cks-worker:/home/ubuntu/worker-install-all.sh
+```
+
+---
+
+## 3. Install the Control Plane
+
+Connect to the master node:
+
+```bash
+multipass shell cks-master
+```
+
+Run the installation:
+
+```bash
+chmod +x install-all.sh
+sudo ./install-all.sh
+```
+
+The script will:
+
+- Configure kernel modules
+- Configure sysctl settings
+- Disable swap
+- Install containerd
+- Install Kubernetes components
+- Initialize the cluster using kubeadm
+- Install Flannel networking
+- Generate a worker join command
+
+At the end of the installation you will receive a command similar to:
+
+```bash
+kubeadm join <MASTER-IP>:6443 \
+  --token <TOKEN> \
+  --discovery-token-ca-cert-hash sha256:<HASH>
+```
+
+Save this command for the next step.
+
+---
+
+## 4. Join the Worker Node
+
+Connect to the worker:
+
+```bash
+multipass shell cks-worker
+```
+
+Run:
+
+```bash
+chmod +x worker-install-all.sh
+
+sudo ./worker-install-all.sh \
+'kubeadm join <MASTER-IP>:6443 --token <TOKEN> --discovery-token-ca-cert-hash sha256:<HASH>'
+```
+
+Wait until the worker successfully joins the cluster.
+
+---
+
+## 5. Verify the Cluster
+
+Return to the master node and verify:
+
+```bash
+kubectl get nodes
+```
+
+Expected output:
+
+```text
+NAME         STATUS   ROLES           VERSION
+cks-master   Ready    control-plane   v1.34.x
+cks-worker   Ready    <none>          v1.34.x
+```
+
+Check system pods:
+
+```bash
+kubectl get pods -A
+```
+
+All pods should eventually reach the `Running` state.
+
+---
+
+# Usage
+
+## Show Cluster Nodes
+
+```bash
+kubectl get nodes -o wide
+```
+
+---
+
+## Show Cluster Pods
+
+```bash
+kubectl get pods -A
+```
+
+---
+
+## Deploy a Test Application
+
+Create a simple NGINX deployment:
+
+```bash
+kubectl create deployment nginx \
+  --image=nginx
+```
+
+Verify:
+
+```bash
+kubectl get deployments
+kubectl get pods
+```
+
+---
+
+## Scale a Deployment
+
+Scale NGINX to three replicas:
+
+```bash
+kubectl scale deployment nginx \
+  --replicas=3
+```
+
+Verify:
+
+```bash
+kubectl get pods -o wide
+```
+
+---
+
+## Delete a Deployment
+
+```bash
+kubectl delete deployment nginx
+```
+
+---
+
+# Project Structure
+
+```text
+simple-multipass-kubernetes-with-multipass/
+│
+├── cks-master/
+│   └── install-all.sh
+│
+├── cks-worker/
+│   └── install-all.sh
+│
+└── README.md
+```
+
+---
+
+# Troubleshooting
+
+## Node Shows NotReady
+
+Check node status:
+
+```bash
+kubectl get nodes
+```
+
+Inspect the node:
+
+```bash
+kubectl describe node <node-name>
+```
+
+---
+
+## CoreDNS Remains Pending
+
+Common causes:
+
+- Insufficient disk space
+- Insufficient memory
+- Node taints
+- Network plugin issues
+
+Verify:
+
+```bash
+kubectl get pods -A
+kubectl describe pod -n kube-system <pod-name>
+```
+
+---
+
+## Verify Flannel
+
+```bash
+kubectl get pods -n kube-flannel
+```
+
+Expected:
+
+```text
+NAME                    READY   STATUS
+kube-flannel-ds-xxxxx   1/1     Running
+```
+
+---
+
+# Cleanup
+
+Delete all virtual machines:
+
+```bash
+multipass delete cks-master cks-worker
+multipass purge
+```
+
+Verify cleanup:
+
+```bash
+multipass list
+```
+
+---
+
+# License
+
+This project is licensed under the MIT License.
