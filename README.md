@@ -1,4 +1,4 @@
-# Simple Kubernetes Cluster with Multipass
+# Simple Kubernetes Cluster with Multipass and kubeadm
 
 A lightweight Kubernetes lab environment built with **Multipass**, **kubeadm**, and **containerd**.
 
@@ -12,66 +12,15 @@ The setup is optimized for both **ARM64** (Apple Silicon M1/M2/M3 and ARM-based 
 
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
-  - [Host Requirements](#host-requirements)
-  - [Verify Multipass Installation](#verify-multipass-installation)
 - [Quick Start](#quick-start)
-  - [1. Create the Virtual Machines](#1-create-the-virtual-machines)
-  - [2. Copy the Installation Scripts](#2-copy-the-installation-scripts)
-  - [3. Install the Control Plane](#3-install-the-control-plane)
-  - [4. Join the Worker Node](#4-join-the-worker-node)
-  - [5. Verify the Cluster](#5-verify-the-cluster)
 - [Usage](#usage)
-  - [Show Cluster Nodes](#show-cluster-nodes)
-  - [Show Cluster Pods](#show-cluster-pods)
-  - [Deploy a Test Application](#deploy-a-test-application)
-  - [Scale a Deployment](#scale-a-deployment)
-  - [Delete a Deployment](#delete-a-deployment)
-- [Project Structure](#project-structure)
-- [Troubleshooting](#troubleshooting)
 - [Cleanup](#cleanup)
-- [License](#license)
 
 ---
 
 # Architecture
 
-The cluster consists of one Kubernetes control plane node and one worker node running inside Ubuntu virtual machines managed by Multipass.
-
-```text
-+--------------------------------------------------+
-|                   Host System                    |
-|               macOS / Linux Host                 |
-|                    Multipass                     |
-+--------------------------+-----------------------+
-                           |
-        +------------------+------------------+
-        |                                     |
-+-------+--------+                   +--------+-------+
-|   cks-master   |                   |   cks-worker   |
-| Control Plane  |                   |     Worker     |
-+----------------+                   +----------------+
-| kube-apiserver |                   | kubelet        |
-| kube-scheduler |                   | kube-proxy     |
-| controller-mgr |                   | containerd     |
-| etcd           |                   |                |
-| kubelet        |                   |                |
-| containerd     |                   |                |
-+----------------+                   +----------------+
-```
-
-## Components
-
-| Component | Purpose |
-|-----------|---------|
-| Multipass | Virtual machine management |
-| Ubuntu 26.04 LTS | Operating system |
-| containerd | Container runtime |
-| kubeadm | Kubernetes cluster bootstrap |
-| kubelet | Node agent |
-| kubectl | Kubernetes command-line tool |
-| Flannel | Container network interface (CNI) |
-
----
+![architecture](architecture.png)
 
 # Prerequisites
 
@@ -86,16 +35,6 @@ The cluster consists of one Kubernetes control plane node and one worker node ru
 
 - Ubuntu 22.04 or newer
 - Multipass installed
-
-### Recommended Resources
-
-| Resource | Master | Worker |
-|-----------|---------|---------|
-| CPU | 2 vCPUs | 2 vCPUs |
-| Memory | 4 GB | 4 GB |
-| Disk | 20 GB | 20 GB |
-
----
 
 ## Verify Multipass Installation
 
@@ -114,26 +53,18 @@ multipassd  x.x.x
 
 # Quick Start
 
-## 1. Create the Virtual Machines
-
-Create the control plane node:
+## 1. Copy the repo
 
 ```bash
-multipass launch 26.04 \
-  --name cks-master \
-  --cpus 2 \
-  --memory 4G \
-  --disk 20G
+git clone https://github.com/FlyingChris1/simple-kubeadm-kubernetes-with-multipass.git
+cd simple-kubeadm-kubernetes-with-multipass
 ```
 
-Create the worker node:
+## 1. Create the Virtual Machines
+
 
 ```bash
-multipass launch 26.04 \
-  --name cks-worker \
-  --cpus 2 \
-  --memory 4G \
-  --disk 20G
+./launch-2vm.sh
 ```
 
 ---
@@ -143,14 +74,14 @@ multipass launch 26.04 \
 Copy the master installation script:
 
 ```bash
-multipass transfer cks-master/install-all.sh \
-  cks-master:/home/ubuntu/install-all.sh
+multipass transfer master-install-all.sh \
+  cks-master:/home/ubuntu/master-install-all.sh
 ```
 
 Copy the worker installation script:
 
 ```bash
-multipass transfer cks-worker/install-all.sh \
+multipass transfer worker-install-all.sh \
   cks-worker:/home/ubuntu/worker-install-all.sh
 ```
 
@@ -167,7 +98,6 @@ multipass shell cks-master
 Run the installation:
 
 ```bash
-chmod +x install-all.sh
 sudo ./install-all.sh
 ```
 
@@ -203,10 +133,9 @@ multipass shell cks-worker
 ```
 
 Run:
+> Now paste the saved command in the placeholder
 
 ```bash
-chmod +x worker-install-all.sh
-
 sudo ./worker-install-all.sh \
 'kubeadm join <MASTER-IP>:6443 --token <TOKEN> --discovery-token-ca-cert-hash sha256:<HASH>'
 ```
@@ -238,6 +167,31 @@ kubectl get pods -A
 ```
 
 All pods should eventually reach the `Running` state.
+
+---
+
+## 6. More workers (Optional)
+
+Create another VM:
+
+```bash
+multipass launch 26.04 --name <vm name> -c 2 -m 2G -d 6G
+```
+
+Transfer the worker-install-all.sh to your new worker VM:
+
+```bash
+multipass transfer worker-install-all.sh \
+  <VM name>:/home/ubuntu/worker-install-all.sh
+```
+
+SSH into your VM and run the script with the master token:
+
+```bash
+sudo ./worker-install-all.sh \
+'kubeadm join <MASTER-IP>:6443 --token <TOKEN> --discovery-token-ca-cert-hash sha256:<HASH>'
+```
+
 
 ---
 
@@ -302,73 +256,6 @@ kubectl delete deployment nginx
 
 ---
 
-# Project Structure
-
-```text
-simple-multipass-kubernetes-with-multipass/
-│
-├── cks-master/
-│   └── install-all.sh
-│
-├── cks-worker/
-│   └── install-all.sh
-│
-└── README.md
-```
-
----
-
-# Troubleshooting
-
-## Node Shows NotReady
-
-Check node status:
-
-```bash
-kubectl get nodes
-```
-
-Inspect the node:
-
-```bash
-kubectl describe node <node-name>
-```
-
----
-
-## CoreDNS Remains Pending
-
-Common causes:
-
-- Insufficient disk space
-- Insufficient memory
-- Node taints
-- Network plugin issues
-
-Verify:
-
-```bash
-kubectl get pods -A
-kubectl describe pod -n kube-system <pod-name>
-```
-
----
-
-## Verify Flannel
-
-```bash
-kubectl get pods -n kube-flannel
-```
-
-Expected:
-
-```text
-NAME                    READY   STATUS
-kube-flannel-ds-xxxxx   1/1     Running
-```
-
----
-
 # Cleanup
 
 Delete all virtual machines:
@@ -385,7 +272,3 @@ multipass list
 ```
 
 ---
-
-# License
-
-This project is licensed under the MIT License.
